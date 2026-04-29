@@ -1020,8 +1020,17 @@ void swell_oswindow_destroy(HWND hwnd);
 void swell_oswindow_manage(HWND hwnd, bool wantfocus);
 void swell_oswindow_maximize(HWND, bool wantmax); // false=restore
 void swell_oswindow_updatetoscreen(HWND hwnd, RECT *rect);
+void swell_atspi_window_created(HWND hwnd);
+void swell_atspi_window_destroyed(HWND hwnd);
+void swell_atspi_window_changed(HWND hwnd);
+void swell_atspi_focus_changed(void);
+void swell_atspi_pump(void);
+void swell_atspi_keyboard_event(uint32_t event_type, uint32_t keyval, uint32_t hardware_keycode, uint32_t modifiers, int32_t timestamp, const char *event_string, bool is_text);
+bool swell_edit_control_get_atspi_text_state(HWND hwnd, int *cursor_pos, int *sel_start, int *sel_end, int *scroll_x);
+bool swell_edit_control_set_atspi_selection(HWND hwnd, int anchor, int focus);
 HWND swell_window_wants_all_input(); // window with an active drag of menubar will have this set, to route all mouse events to nonclient area of window
 int swell_delegate_menu_message(HWND src, LPARAM lParam, int msg, bool screencoords); // menubar/menus delegate to submenus during drag.
+HWND SWELL_GetFocusedChild(HWND h);
 
 void swell_dlg_destroyspare();
 

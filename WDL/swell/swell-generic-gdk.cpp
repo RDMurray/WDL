@@ -44,6 +44,7 @@ extern "C" {
 #include "../wdlcstring.h"
 #include "../wdlutf8.h"
 
+#include <stdlib.h>
 
 #if !defined(SWELL_TARGET_GDK_NO_CURSOR_HACK)
   #define SWELL_TARGET_GDK_CURSORHACK
@@ -215,6 +216,7 @@ static void on_activate(guint32 ftime)
   s_force_window_time = 0;
 
   update_menubar_activations();
+  swell_atspi_focus_changed();
 }
 
 void swell_gdk_reactivate_app(void)
@@ -253,6 +255,7 @@ void swell_oswindow_destroy(HWND hwnd)
 {
   if (hwnd && hwnd->m_oswindow)
   {
+    swell_atspi_window_destroyed(hwnd);
     if (SWELL_focused_oswindow == hwnd->m_oswindow) SWELL_focused_oswindow = NULL;
     if (g_swell_touchptr && g_swell_touchptr_wnd == hwnd->m_oswindow)
       g_swell_touchptr = NULL;
@@ -724,6 +727,8 @@ void swell_oswindow_manage(HWND hwnd, bool wantfocus)
           }
 
           swell_set_owned_windows_transient(hwnd, true);
+          swell_atspi_window_created(hwnd);
+          swell_atspi_window_changed(hwnd);
         }
       }
     }
@@ -1072,6 +1077,7 @@ static void OnConfigureEvent(GdkEventConfigure *cfg)
   hwnd->m_position.top = cfg->y;
   hwnd->m_position.right = cfg->x + cfg->width;
   hwnd->m_position.bottom = cfg->y + cfg->height;
+  if (flag) swell_atspi_window_changed(hwnd);
   if (flag&1) SendMessage(hwnd,WM_MOVE,0,0);
   if (flag&2) SendMessage(hwnd,WM_SIZE,hwnd->m_is_maximized ? SIZE_MAXIMIZED : SIZE_RESTORED,0);
   if (!hwnd->m_hashaddestroy && hwnd->m_oswindow && (hwnd->m_style & WS_THICKFRAME))
@@ -1383,6 +1389,32 @@ static void OnKeyEvent(GdkEventKey *k)
   HWND foc = GetFocusIncludeMenus();
   if (foc && IsChild(hwnd,foc)) hwnd=foc;
   else if (foc && foc->m_oswindow && !(foc->m_style&WS_CAPTION)) hwnd=foc; // for menus, event sent to other window due to gdk_window_set_override_redirect()
+
+  if ((getenv("WAYLAND_DISPLAY") || getenv("SWELL_ATSPI_NOTIFY_KEYS")) && hwnd)
+  {
+    const char *event_string = "";
+    bool is_text = false;
+    const guint unicode = gdk_keyval_to_unicode(k->keyval);
+    const guint text_suppressing_mods = GDK_CONTROL_MASK | GDK_MOD1_MASK | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_META_MASK;
+    if (k->string && k->length > 0 && unicode >= 0x20 && unicode != 0x7f && !(k->state & text_suppressing_mods))
+    {
+      event_string = k->string;
+      is_text = true;
+    }
+    else
+    {
+      const char *key_name = gdk_keyval_name(k->keyval);
+      if (key_name) event_string = key_name;
+    }
+
+    swell_atspi_keyboard_event(k->type == GDK_KEY_PRESS ? 0 : 1,
+        (uint32_t)k->keyval,
+        (uint32_t)k->hardware_keycode,
+        (uint32_t)k->state,
+        (int32_t)k->time,
+        event_string,
+        is_text);
+  }
 
   if (is_extended) modifiers |= 1<<24;
 
@@ -1923,6 +1955,7 @@ void SWELL_RunEvents()
       }
     }
 #endif
+    swell_atspi_pump();
   }
 }
 

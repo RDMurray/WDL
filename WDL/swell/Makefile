@@ -100,7 +100,7 @@ vpath %.cpp .. ../lice
 SWELL_OBJS = swell.o swell-ini.o swell-miscdlg-generic.o swell-wnd-generic.o \
              swell-menu-generic.o swell-kb-generic.o swell-dlg-generic.o \
              swell-gdi-generic.o swell-misc-generic.o swell-gdi-lice.o \
-             swell-generic-headless.o swell-generic-gdk.o \
+             swell-generic-headless.o swell-generic-gdk.o swell-atspi-generic.o \
              swell-appstub-generic.o swell-modstub-generic.o 
 
 LICE_OBJS = lice.o  lice_arc.o lice_colorspace.o lice_line.o lice_text.o \
@@ -141,6 +141,11 @@ ifndef NOGDK
   CFLAGS += -DSWELL_LICE_GDI
   OBJS += $(LICE_OBJS)
 
+  ifndef NOATSPI
+    CFLAGS += -DSWELL_ATSPI $(shell $(PKG_CONFIG) --cflags gio-2.0)
+    LINKEXTRA += $(shell $(PKG_CONFIG) --libs gio-2.0)
+  endif
+
   ifndef NOFREETYPE
     CFLAGS += -DSWELL_FREETYPE $(shell $(PKG_CONFIG) --cflags freetype2)
     ifndef PRELOAD_GDK
@@ -177,6 +182,7 @@ swell-kb-generic.o: $(SWELL_HEADERS)
 swell-miscdlg-generic.o: $(SWELL_HEADERS)
 swell-modstub-generic.o: $(SWELL_HEADERS)
 swell-appstub-generic.o: $(SWELL_HEADERS)
+swell-atspi-generic.o: $(SWELL_HEADERS)
 
 libSwell$(DLL_EXT): $(OBJS)
 	$(CXX) -shared -o $@ $(CFLAGS) $(LFLAGS) $^ $(LINKEXTRA)

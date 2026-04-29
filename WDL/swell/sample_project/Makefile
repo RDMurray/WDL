@@ -1,6 +1,6 @@
 APPNAME=myapp
 
-WDL_PATH = ../WDL
+WDL_PATH ?= ../..
 vpath swell%.cpp $(WDL_PATH)/swell
 vpath lice%.cpp $(WDL_PATH)/lice
 vpath %.c $(WDL_PATH)
@@ -10,7 +10,8 @@ vpath %.cpp $(WDL_PATH) $(WDL_PATH)/wingui
 SWELL_OBJS = swell.o swell-ini.o swell-miscdlg-generic.o swell-wnd-generic.o \
              swell-menu-generic.o swell-kb-generic.o swell-dlg-generic.o \
              swell-gdi-generic.o swell-misc-generic.o swell-gdi-lice.o \
-             swell-generic-gdk.o swell-appstub-generic.o swell-modstub-generic.o
+             swell-generic-gdk.o swell-atspi-generic.o \
+             swell-appstub-generic.o swell-modstub-generic.o
 
 LICE_OBJS = lice_image.o lice_arc.o lice_line.o lice_text.o \
             lice_textnew.o lice.o lice_colorspace.o
@@ -24,7 +25,7 @@ OBJS += myapp.o $(SWELL_OBJS) $(OTHER_OBJS)
 
 ###### Compiler/Linker flags
 CFLAGS += -pipe -fvisibility=hidden -fno-math-errno -fPIC -DPIC -Wall -Wshadow -Wtype-limits \
-          -Wno-unused-function -Wno-multichar -Wno-unused-result
+          -Wno-unused-function -Wno-multichar -Wno-unused-result -Wno-unused-value -Wno-dangling-pointer
 
 CFLAGS += -D_FILE_OFFSET_BITS=64
 
@@ -70,6 +71,11 @@ ifndef NOGDK
   endif
   CFLAGS += -DSWELL_LICE_GDI
   OBJS += $(LICE_OBJS)
+
+  ifndef NOATSPI
+    CFLAGS += -DSWELL_ATSPI $(shell $(PKG_CONFIG) --cflags gio-2.0)
+    LINKEXTRA += $(shell $(PKG_CONFIG) --libs gio-2.0)
+  endif
 
   ifndef NOFREETYPE
     CFLAGS += -DSWELL_FREETYPE $(shell $(PKG_CONFIG) --cflags freetype2)
