@@ -75,17 +75,25 @@ enum
 {
   SWELL_ATSPI_ROLE_INVALID = 0,
   SWELL_ATSPI_ROLE_CHECK_BOX = 7,
+  SWELL_ATSPI_ROLE_COMBO_BOX = 11,
   SWELL_ATSPI_ROLE_DIALOG = 16,
+  SWELL_ATSPI_ROLE_FILLER = 20,
   SWELL_ATSPI_ROLE_FRAME = 23,
   SWELL_ATSPI_ROLE_LABEL = 29,
+  SWELL_ATSPI_ROLE_LIST = 31,
+  SWELL_ATSPI_ROLE_PAGE_TAB_LIST = 38,
+  SWELL_ATSPI_ROLE_PANEL = 39,
   SWELL_ATSPI_ROLE_PROGRESS_BAR = 42,
   SWELL_ATSPI_ROLE_PUSH_BUTTON = 43,
   SWELL_ATSPI_ROLE_RADIO_BUTTON = 44,
   SWELL_ATSPI_ROLE_SLIDER = 51,
+  SWELL_ATSPI_ROLE_TABLE = 55,
   SWELL_ATSPI_ROLE_TEXT = 61,
+  SWELL_ATSPI_ROLE_TREE = 65,
   SWELL_ATSPI_ROLE_WINDOW = 69,
   SWELL_ATSPI_ROLE_APPLICATION = 75,
-  SWELL_ATSPI_ROLE_ENTRY = 79
+  SWELL_ATSPI_ROLE_ENTRY = 79,
+  SWELL_ATSPI_ROLE_LIST_BOX = 98
 };
 
 struct SWELL_AtspiInterfaceSet
@@ -106,6 +114,15 @@ static bool g_atspi_initialized;
 static bool g_atspi_embedded;
 static bool g_atspi_debug;
 static HWND g_atspi_focused_hwnd;
+
+struct SWELL_AtspiObjectRecord
+{
+  std::string path;
+  HWND hwnd;
+  bool defunct;
+};
+
+static std::vector<SWELL_AtspiObjectRecord> g_atspi_objects;
 
 static const char g_atspi_xml[] =
 "<node>"
@@ -194,53 +211,79 @@ static GDBusInterfaceInfo *swell_atspi_find_interface(const char *name)
   return NULL;
 }
 
-static bool swell_atspi_is_live_hwnd(HWND target)
+static SWELL_AtspiObjectRecord *swell_atspi_find_record_by_hwnd(HWND hwnd)
 {
-  if (!target) return false;
-  HWND root = SWELL_topwindows;
-  while (root)
+  if (!hwnd) return NULL;
+  for (size_t i = 0; i < g_atspi_objects.size(); ++i)
   {
-    HWND stack[256];
-    int stack_sz = 0;
-    if (root) stack[stack_sz++] = root;
-    while (stack_sz > 0)
-    {
-      HWND hwnd = stack[--stack_sz];
-      if (hwnd == target) return !hwnd->m_hashaddestroy;
-      HWND child = hwnd ? hwnd->m_children : NULL;
-      while (child && stack_sz < (int)(sizeof(stack)/sizeof(stack[0])))
-      {
-        stack[stack_sz++] = child;
-        child = child->m_next;
-      }
-    }
-    root = root->m_next;
-  }
-  return false;
-}
-
-static HWND swell_atspi_find_hwnd_by_bits(uintptr_t bits)
-{
-  HWND root = SWELL_topwindows;
-  while (root)
-  {
-    HWND stack[256];
-    int stack_sz = 0;
-    stack[stack_sz++] = root;
-    while (stack_sz > 0)
-    {
-      HWND hwnd = stack[--stack_sz];
-      if ((uintptr_t)hwnd == bits) return !hwnd->m_hashaddestroy ? hwnd : NULL;
-      HWND child = hwnd ? hwnd->m_children : NULL;
-      while (child && stack_sz < (int)(sizeof(stack)/sizeof(stack[0])))
-      {
-        stack[stack_sz++] = child;
-        child = child->m_next;
-      }
-    }
-    root = root->m_next;
+    if (g_atspi_objects[i].hwnd == hwnd) return &g_atspi_objects[i];
   }
   return NULL;
+}
+
+static SWELL_AtspiObjectRecord *swell_atspi_find_record_by_path(const char *path)
+{
+  if (!path) return NULL;
+  for (size_t i = 0; i < g_atspi_objects.size(); ++i)
+  {
+    if (g_atspi_objects[i].path == path) return &g_atspi_objects[i];
+  }
+  return NULL;
+}
+
+static std::string swell_atspi_path_string_for_hwnd(HWND hwnd)
+{
+  char buf[128];
+  snprintf(buf,sizeof(buf),"%s/h_%llx",SWELL_ATSPI_ACCESSIBLE_PREFIX,(unsigned long long)(uintptr_t)hwnd);
+  return std::string(buf);
+}
+
+static void swell_atspi_register_hwnd(HWND hwnd)
+{
+  if (!hwnd) return;
+  SWELL_AtspiObjectRecord *record = swell_atspi_find_record_by_hwnd(hwnd);
+  if (record)
+  {
+    record->defunct = hwnd->m_hashaddestroy;
+    if (!record->defunct) record->path = swell_atspi_path_string_for_hwnd(hwnd);
+    return;
+  }
+  const std::string path = swell_atspi_path_string_for_hwnd(hwnd);
+  record = swell_atspi_find_record_by_path(path.c_str());
+  if (record)
+  {
+    record->hwnd = hwnd;
+    record->defunct = hwnd->m_hashaddestroy;
+    return;
+  }
+  SWELL_AtspiObjectRecord new_record;
+  new_record.path = path;
+  new_record.hwnd = hwnd;
+  new_record.defunct = hwnd->m_hashaddestroy;
+  g_atspi_objects.push_back(new_record);
+}
+
+static void swell_atspi_mark_defunct(HWND hwnd)
+{
+  if (!hwnd) return;
+  SWELL_AtspiObjectRecord *record = swell_atspi_find_record_by_hwnd(hwnd);
+  if (!record)
+  {
+    SWELL_AtspiObjectRecord new_record;
+    new_record.path = swell_atspi_path_string_for_hwnd(hwnd);
+    new_record.hwnd = NULL;
+    new_record.defunct = true;
+    g_atspi_objects.push_back(new_record);
+    return;
+  }
+  record->hwnd = NULL;
+  record->defunct = true;
+}
+
+static bool swell_atspi_is_live_hwnd(HWND target)
+{
+  SWELL_AtspiObjectRecord *record = swell_atspi_find_record_by_hwnd(target);
+  return record && record->hwnd == target && !record->defunct && !target->m_hashaddestroy;
 }
 
 static HWND swell_atspi_get_root(HWND hwnd)
@@ -251,27 +294,31 @@ static HWND swell_atspi_get_root(HWND hwnd)
 
 static std::string swell_atspi_path_for_hwnd(HWND hwnd)
 {
-  char buf[128];
-  snprintf(buf,sizeof(buf),"%s/h_%llx",SWELL_ATSPI_ACCESSIBLE_PREFIX,(unsigned long long)(uintptr_t)hwnd);
-  return std::string(buf);
+  swell_atspi_register_hwnd(hwnd);
+  return swell_atspi_path_string_for_hwnd(hwnd);
 }
 
-static bool swell_atspi_parse_path(const char *path, HWND *hwnd)
+static bool swell_atspi_parse_path(const char *path, HWND *hwnd, bool *defunct)
 {
   if (hwnd) *hwnd = NULL;
+  if (defunct) *defunct = false;
   if (!path) return false;
   if (!strcmp(path,SWELL_ATSPI_ROOT_PATH)) return true;
   const size_t prefix_len = strlen(SWELL_ATSPI_ACCESSIBLE_PREFIX);
   if (strncmp(path,SWELL_ATSPI_ACCESSIBLE_PREFIX,prefix_len) || path[prefix_len] != '/') return false;
   const char *node = path + prefix_len + 1;
   if (strncmp(node,"h_",2)) return false;
-  errno = 0;
-  char *end = NULL;
-  unsigned long long bits = strtoull(node + 2,&end,16);
-  if (errno || !end || *end) return false;
-  HWND found = swell_atspi_find_hwnd_by_bits((uintptr_t)bits);
-  if (!found) return false;
-  if (hwnd) *hwnd = found;
+
+  SWELL_AtspiObjectRecord *record = swell_atspi_find_record_by_path(path);
+  if (!record) return false;
+  if (record->defunct || !record->hwnd || record->hwnd->m_hashaddestroy)
+  {
+    record->hwnd = NULL;
+    record->defunct = true;
+    if (defunct) *defunct = true;
+    return true;
+  }
+  if (hwnd) *hwnd = record->hwnd;
   return true;
 }
 
@@ -402,6 +449,11 @@ static bool swell_atspi_is_button(HWND hwnd)
   return swell_atspi_class_is(hwnd,"Button") && !(hwnd->m_style & BS_GROUPBOX);
 }
 
+static bool swell_atspi_is_groupbox(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"Button") && (hwnd->m_style & BS_GROUPBOX);
+}
+
 static bool swell_atspi_is_checkbox(HWND hwnd)
 {
   return swell_atspi_is_button(hwnd) && ((hwnd->m_style & 0xf) == BS_AUTOCHECKBOX || (hwnd->m_style & 0xf) == BS_AUTO3STATE);
@@ -427,12 +479,38 @@ static bool swell_atspi_is_progress(HWND hwnd)
   return swell_atspi_class_is(hwnd,"msctls_progress32");
 }
 
+static bool swell_atspi_is_combo(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"combobox") || swell_atspi_class_is(hwnd,"ComboBox");
+}
+
+static bool swell_atspi_is_list(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"ListBox") || swell_atspi_class_is(hwnd,"SysListView32_LB");
+}
+
+static bool swell_atspi_is_listview(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"SysListView32");
+}
+
+static bool swell_atspi_is_tree(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"SysTreeView32");
+}
+
+static bool swell_atspi_is_tab(HWND hwnd)
+{
+  return swell_atspi_class_is(hwnd,"SysTabControl32");
+}
+
 static bool swell_atspi_is_focusable(HWND hwnd)
 {
   if (!hwnd || !hwnd->m_enabled) return false;
   if (swell_atspi_class_is(hwnd,"Static") || swell_atspi_is_progress(hwnd)) return false;
   return (hwnd->m_style & WS_TABSTOP) || swell_atspi_is_button(hwnd) || swell_atspi_is_edit(hwnd) ||
-         swell_atspi_is_slider(hwnd) || swell_atspi_class_is(hwnd,"combobox");
+         swell_atspi_is_slider(hwnd) || swell_atspi_is_combo(hwnd) || swell_atspi_is_list(hwnd) ||
+         swell_atspi_is_listview(hwnd) || swell_atspi_is_tree(hwnd) || swell_atspi_is_tab(hwnd);
 }
 
 static bool swell_atspi_is_focused(HWND hwnd)
@@ -449,13 +527,19 @@ static unsigned int swell_atspi_role(HWND hwnd)
   if (!hwnd) return SWELL_ATSPI_ROLE_APPLICATION;
   if (!hwnd->m_parent) return (hwnd->m_style & WS_CAPTION) ? SWELL_ATSPI_ROLE_FRAME : SWELL_ATSPI_ROLE_WINDOW;
   if (swell_atspi_class_is(hwnd,"Static")) return SWELL_ATSPI_ROLE_LABEL;
+  if (swell_atspi_is_groupbox(hwnd)) return SWELL_ATSPI_ROLE_PANEL;
   if (swell_atspi_is_checkbox(hwnd)) return SWELL_ATSPI_ROLE_CHECK_BOX;
   if (swell_atspi_is_radio(hwnd)) return SWELL_ATSPI_ROLE_RADIO_BUTTON;
   if (swell_atspi_is_button(hwnd)) return SWELL_ATSPI_ROLE_PUSH_BUTTON;
   if (swell_atspi_is_edit(hwnd)) return (hwnd->m_style & ES_MULTILINE) ? SWELL_ATSPI_ROLE_TEXT : SWELL_ATSPI_ROLE_ENTRY;
   if (swell_atspi_is_slider(hwnd)) return SWELL_ATSPI_ROLE_SLIDER;
   if (swell_atspi_is_progress(hwnd)) return SWELL_ATSPI_ROLE_PROGRESS_BAR;
-  return (hwnd->m_style & WS_CAPTION) ? SWELL_ATSPI_ROLE_DIALOG : SWELL_ATSPI_ROLE_INVALID;
+  if (swell_atspi_is_combo(hwnd)) return SWELL_ATSPI_ROLE_COMBO_BOX;
+  if (swell_atspi_is_list(hwnd)) return SWELL_ATSPI_ROLE_LIST_BOX;
+  if (swell_atspi_is_listview(hwnd)) return SWELL_ATSPI_ROLE_TABLE;
+  if (swell_atspi_is_tree(hwnd)) return SWELL_ATSPI_ROLE_TREE;
+  if (swell_atspi_is_tab(hwnd)) return SWELL_ATSPI_ROLE_PAGE_TAB_LIST;
+  return (hwnd->m_style & WS_CAPTION) ? SWELL_ATSPI_ROLE_DIALOG : SWELL_ATSPI_ROLE_PANEL;
 }
 
 static const char *swell_atspi_role_name(unsigned int role)
@@ -463,16 +547,24 @@ static const char *swell_atspi_role_name(unsigned int role)
   switch (role)
   {
     case SWELL_ATSPI_ROLE_APPLICATION: return "application";
+    case SWELL_ATSPI_ROLE_COMBO_BOX: return "combo box";
     case SWELL_ATSPI_ROLE_FRAME: return "frame";
     case SWELL_ATSPI_ROLE_WINDOW: return "window";
     case SWELL_ATSPI_ROLE_DIALOG: return "dialog";
+    case SWELL_ATSPI_ROLE_FILLER: return "filler";
     case SWELL_ATSPI_ROLE_LABEL: return "label";
+    case SWELL_ATSPI_ROLE_LIST: return "list";
+    case SWELL_ATSPI_ROLE_LIST_BOX: return "list box";
+    case SWELL_ATSPI_ROLE_PAGE_TAB_LIST: return "page tab list";
+    case SWELL_ATSPI_ROLE_PANEL: return "panel";
     case SWELL_ATSPI_ROLE_CHECK_BOX: return "check box";
     case SWELL_ATSPI_ROLE_RADIO_BUTTON: return "radio button";
     case SWELL_ATSPI_ROLE_PUSH_BUTTON: return "push button";
     case SWELL_ATSPI_ROLE_ENTRY: return "entry";
     case SWELL_ATSPI_ROLE_TEXT: return "text";
     case SWELL_ATSPI_ROLE_SLIDER: return "slider";
+    case SWELL_ATSPI_ROLE_TABLE: return "table";
+    case SWELL_ATSPI_ROLE_TREE: return "tree";
     case SWELL_ATSPI_ROLE_PROGRESS_BAR: return "progress bar";
   }
   return "invalid";
@@ -555,6 +647,7 @@ static const char *swell_atspi_action_name(HWND hwnd, int index)
 {
   if (index != 0 || !hwnd) return "";
   if (swell_atspi_is_button(hwnd)) return "click";
+  if (swell_atspi_is_combo(hwnd)) return "press";
   if (swell_atspi_is_focusable(hwnd)) return "focus";
   return "";
 }
@@ -563,6 +656,13 @@ static bool swell_atspi_do_action(HWND hwnd, int index)
 {
   if (index != 0 || !hwnd || hwnd->m_hashaddestroy) return false;
   if (swell_atspi_is_button(hwnd))
+  {
+    SetFocus(hwnd);
+    SendMessage(hwnd,WM_KEYDOWN,VK_SPACE,0);
+    SendMessage(hwnd,WM_KEYUP,VK_SPACE,0);
+    return true;
+  }
+  if (swell_atspi_is_combo(hwnd))
   {
     SetFocus(hwnd);
     SendMessage(hwnd,WM_KEYDOWN,VK_SPACE,0);
@@ -642,18 +742,25 @@ static int swell_atspi_text_character(HWND hwnd, int offset)
 
 static void swell_atspi_get_text_selection(HWND hwnd, int *start, int *end)
 {
-  int cursor = 0, sel_start = -1, sel_end = -1;
-  swell_edit_control_get_atspi_text_state(hwnd,&cursor,&sel_start,&sel_end,NULL);
+  int sel_start = -1, sel_end = -1;
+  swell_edit_control_get_atspi_text_state(hwnd,NULL,&sel_start,&sel_end,NULL);
   if (sel_start >= 0 && sel_end > sel_start)
   {
-    if (start) *start = sel_start;
-    if (end) *end = sel_end;
+    if (start) *start = swell_atspi_clamp_text_offset(hwnd,sel_start);
+    if (end) *end = swell_atspi_clamp_text_offset(hwnd,sel_end);
   }
   else
   {
-    if (start) *start = cursor;
-    if (end) *end = cursor;
+    if (start) *start = 0;
+    if (end) *end = 0;
   }
+}
+
+static bool swell_atspi_set_text_selection(HWND hwnd, int start, int end)
+{
+  start = swell_atspi_clamp_text_offset(hwnd,start);
+  end = swell_atspi_clamp_text_offset(hwnd,end);
+  return swell_edit_control_set_atspi_selection(hwnd,start,end);
 }
 
 static bool swell_atspi_replace_text(HWND hwnd, int start_offset, int end_offset, const char *insert_text)
@@ -682,9 +789,10 @@ static SWELL_AtspiInterfaceSet swell_atspi_interfaces_for_object(HWND hwnd, bool
     set.application = true;
     return set;
   }
+  if (!hwnd) return set;
   set.component = true;
   set.action = swell_atspi_action_count(hwnd) > 0;
-  set.value = swell_atspi_is_slider(hwnd) || swell_atspi_is_progress(hwnd);
+  set.value = swell_atspi_get_value(hwnd,NULL,NULL,NULL,NULL);
   set.text = swell_atspi_is_edit(hwnd);
   set.editable_text = swell_atspi_is_edit(hwnd) && !(hwnd->m_style & ES_READONLY);
   return set;
@@ -715,7 +823,7 @@ static GVariant *swell_atspi_accessible_property(HWND hwnd, bool root_object, co
   {
     if (root_object) return swell_atspi_null_ref_variant();
     if (hwnd && hwnd->m_parent) return swell_atspi_ref_variant_for_path(swell_atspi_path_for_hwnd(hwnd->m_parent));
-    return swell_atspi_ref_variant_for_path(SWELL_ATSPI_ROOT_PATH);
+    return hwnd ? swell_atspi_ref_variant_for_path(SWELL_ATSPI_ROOT_PATH) : swell_atspi_null_ref_variant();
   }
   if (!strcmp(property_name,"ChildCount"))
   {
@@ -727,6 +835,7 @@ static GVariant *swell_atspi_accessible_property(HWND hwnd, bool root_object, co
 
 static GVariant *swell_atspi_text_property(HWND hwnd, const char *property_name)
 {
+  if (!swell_atspi_is_edit(hwnd)) return NULL;
   if (!strcmp(property_name,"CaretOffset"))
   {
     int cursor = 0;
@@ -741,7 +850,7 @@ static GVariant *swell_atspi_text_property(HWND hwnd, const char *property_name)
 static GVariant *swell_atspi_value_property(HWND hwnd, const char *property_name)
 {
   double value = 0.0, min_value = 0.0, max_value = 0.0, increment = 0.0;
-  swell_atspi_get_value(hwnd,&value,&min_value,&max_value,&increment);
+  if (!swell_atspi_get_value(hwnd,&value,&min_value,&max_value,&increment)) return NULL;
   if (!strcmp(property_name,"CurrentValue")) return g_variant_new_double(value);
   if (!strcmp(property_name,"MinimumValue")) return g_variant_new_double(min_value);
   if (!strcmp(property_name,"MaximumValue")) return g_variant_new_double(max_value);
@@ -758,8 +867,9 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
   (void)user_data;
 
   HWND hwnd = NULL;
+  bool object_defunct = false;
   const bool root_object = object_path && !strcmp(object_path,SWELL_ATSPI_ROOT_PATH);
-  if (!root_object && !swell_atspi_parse_path(object_path,&hwnd))
+  if (!root_object && !swell_atspi_parse_path(object_path,&hwnd,&object_defunct))
   {
     g_dbus_method_invocation_return_dbus_error(invocation,"org.a11y.atspi.Error.NotFound","Object is no longer available");
     return;
@@ -830,12 +940,12 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
     }
     if (!strcmp(method_name,"GetRole"))
     {
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(u)",root_object ? SWELL_ATSPI_ROLE_APPLICATION : swell_atspi_role(hwnd)));
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(u)",object_defunct ? SWELL_ATSPI_ROLE_INVALID : (root_object ? SWELL_ATSPI_ROLE_APPLICATION : swell_atspi_role(hwnd))));
       return;
     }
     if (!strcmp(method_name,"GetRoleName") || !strcmp(method_name,"GetLocalizedRoleName"))
     {
-      const unsigned int role = root_object ? SWELL_ATSPI_ROLE_APPLICATION : swell_atspi_role(hwnd);
+      const unsigned int role = object_defunct ? SWELL_ATSPI_ROLE_INVALID : (root_object ? SWELL_ATSPI_ROLE_APPLICATION : swell_atspi_role(hwnd));
       g_dbus_method_invocation_return_value(invocation,g_variant_new("(s)",swell_atspi_role_name(role)));
       return;
     }
@@ -992,7 +1102,7 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
       int offset = 0;
       g_variant_get(parameters,"(i)",&offset);
       offset = swell_atspi_clamp_text_offset(hwnd,offset);
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_edit_control_set_atspi_selection(hwnd,offset,offset)));
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_atspi_set_text_selection(hwnd,offset,offset)));
       return;
     }
     if (!strcmp(method_name,"GetTextBeforeOffset") || !strcmp(method_name,"GetTextAtOffset") || !strcmp(method_name,"GetTextAfterOffset"))
@@ -1051,8 +1161,7 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
     {
       int selection_num = 0, start = 0, end = 0;
       g_variant_get(parameters,"(i)",&selection_num);
-      (void)selection_num;
-      swell_atspi_get_text_selection(hwnd,&start,&end);
+      if (selection_num == 0) swell_atspi_get_text_selection(hwnd,&start,&end);
       g_dbus_method_invocation_return_value(invocation,g_variant_new("(ii)",start,end));
       return;
     }
@@ -1060,24 +1169,25 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
     {
       int selection_num = 0, start = 0, end = 0;
       g_variant_get(parameters,"(iii)",&selection_num,&start,&end);
-      (void)selection_num;
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_edit_control_set_atspi_selection(hwnd,start,end)));
+      const bool ok = selection_num == 0 && swell_atspi_set_text_selection(hwnd,start,end);
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",ok));
       return;
     }
     if (!strcmp(method_name,"AddSelection"))
     {
       int start = 0, end = 0;
       g_variant_get(parameters,"(ii)",&start,&end);
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_edit_control_set_atspi_selection(hwnd,start,end)));
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_atspi_set_text_selection(hwnd,start,end)));
       return;
     }
     if (!strcmp(method_name,"RemoveSelection"))
     {
       int selection_num = 0, cursor = 0;
       g_variant_get(parameters,"(i)",&selection_num);
-      (void)selection_num;
       swell_edit_control_get_atspi_text_state(hwnd,&cursor,NULL,NULL,NULL);
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",swell_edit_control_set_atspi_selection(hwnd,cursor,cursor)));
+      cursor = swell_atspi_clamp_text_offset(hwnd,cursor);
+      const bool ok = selection_num == 0 && swell_atspi_set_text_selection(hwnd,cursor,cursor);
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(b)",ok));
       return;
     }
     if (!strcmp(method_name,"GetAttributeRun"))
@@ -1087,8 +1197,9 @@ static void swell_atspi_method_call(GDBusConnection *connection, const gchar *se
       GVariantBuilder builder;
       g_variant_get(parameters,"(ib)",&offset,&include_defaults);
       (void)include_defaults;
+      offset = swell_atspi_clamp_text_offset(hwnd,offset);
       g_variant_builder_init(&builder,G_VARIANT_TYPE("a{ss}"));
-      g_dbus_method_invocation_return_value(invocation,g_variant_new("(a{ss}ii)",&builder,0,swell_atspi_text_length(hwnd)));
+      g_dbus_method_invocation_return_value(invocation,g_variant_new("(a{ss}ii)",&builder,offset,offset));
       return;
     }
     if (!strcmp(method_name,"GetDefaultAttributes"))
@@ -1160,11 +1271,13 @@ static GVariant *swell_atspi_get_property(GDBusConnection *connection, const gch
   (void)user_data;
 
   HWND hwnd = NULL;
+  bool object_defunct = false;
   const bool root_object = object_path && !strcmp(object_path,SWELL_ATSPI_ROOT_PATH);
-  if (!root_object && !swell_atspi_parse_path(object_path,&hwnd)) {
+  if (!root_object && !swell_atspi_parse_path(object_path,&hwnd,&object_defunct)) {
     g_set_error(error, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS, "Invalid object path: %s", object_path);
     return NULL;
   }
+  (void)object_defunct;
   if (!strcmp(interface_name,SWELL_ATSPI_ACCESSIBLE_IFACE))
     return swell_atspi_accessible_property(hwnd,root_object,property_name);
   if (!strcmp(interface_name,SWELL_ATSPI_VALUE_IFACE))
@@ -1223,7 +1336,9 @@ static GDBusInterfaceInfo **swell_atspi_subtree_introspect(GDBusConnection *conn
 
   HWND hwnd = NULL;
   const bool root_object = !strcmp(path.c_str(),SWELL_ATSPI_ROOT_PATH);
-  if (!root_object && !swell_atspi_parse_path(path.c_str(),&hwnd)) return NULL;
+  bool object_defunct = false;
+  if (!root_object && !swell_atspi_parse_path(path.c_str(),&hwnd,&object_defunct)) return NULL;
+  (void)object_defunct;
 
   SWELL_AtspiInterfaceSet set = swell_atspi_interfaces_for_object(hwnd,root_object);
   std::vector<GDBusInterfaceInfo *> interfaces;
@@ -1352,19 +1467,22 @@ static void swell_atspi_emit_object_event(const char *path, const char *member, 
 
 void swell_atspi_window_created(HWND hwnd)
 {
-  (void)hwnd;
+  swell_atspi_register_hwnd(hwnd);
   swell_atspi_init();
 }
 
 void swell_atspi_window_destroyed(HWND hwnd)
 {
-  if (!g_atspi_bus || !hwnd) return;
+  if (!hwnd) return;
   std::string path = swell_atspi_path_for_hwnd(hwnd);
+  swell_atspi_mark_defunct(hwnd);
+  if (!g_atspi_bus) return;
   swell_atspi_emit_object_event(path.c_str(),"StateChanged","defunct",1,0,g_variant_new_boolean(TRUE));
 }
 
 void swell_atspi_window_changed(HWND hwnd)
 {
+  swell_atspi_register_hwnd(hwnd);
   if (!g_atspi_bus || !hwnd || !swell_atspi_is_live_hwnd(hwnd)) return;
   std::string path = swell_atspi_path_for_hwnd(hwnd);
   swell_atspi_emit_object_event(path.c_str(),"StateChanged","showing",hwnd->m_visible ? 1 : 0,0,g_variant_new_boolean(hwnd->m_visible));
@@ -1404,16 +1522,12 @@ void swell_atspi_keyboard_event(uint32_t event_type, uint32_t keyval, uint32_t h
         event_type,keyval,hardware_keycode,modifiers,is_text ? 1 : 0);
   }
 
-  GError *error = NULL;
-  GVariant *reply = g_dbus_connection_call_sync(g_atspi_bus,SWELL_ATSPI_REGISTRY_NAME,
+  g_dbus_connection_call(g_atspi_bus,SWELL_ATSPI_REGISTRY_NAME,
       "/org/a11y/atspi/registry/deviceeventcontroller",
       "org.a11y.atspi.DeviceEventController","NotifyListenersAsync",
       g_variant_new("((uiiiisb))",event_type,(int32_t)keyval,(int32_t)hardware_keycode,
         (int32_t)modifiers,timestamp,event_string ? event_string : "",is_text),
-      NULL,G_DBUS_CALL_FLAGS_NONE,100,NULL,&error);
-  if (reply) g_variant_unref(reply);
-  else if (g_atspi_debug && error) fprintf(stderr,"SWELL AT-SPI key event notify failed: %s\n",error->message);
-  if (error) g_error_free(error);
+      NULL,G_DBUS_CALL_FLAGS_NONE,100,NULL,NULL,NULL);
 }
 
 #else

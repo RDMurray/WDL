@@ -454,6 +454,7 @@ void RecurseDestroyWindow(HWND hwnd)
 
   if (swell_captured_window == hwnd) swell_captured_window=NULL;
 
+  if (!hwnd->m_oswindow) swell_atspi_window_destroyed(hwnd);
   swell_oswindow_destroy(hwnd);
 
   if (hwnd->m_menu) DestroyMenu(hwnd->m_menu);
