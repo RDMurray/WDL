@@ -548,7 +548,10 @@ void SetFocus(HWND hwnd)
   if (p) swell_oswindow_focus(p);
 
   if (hwnd != oldFoc)
+  {
     SendMessage(hwnd,WM_SETFOCUS,(WPARAM)oldFoc,0);
+    swell_atspi_focus_changed_to(hwnd);
+  }
 }
 
 void SWELL_OnNavigationFocus(HWND ch)
@@ -1354,6 +1357,7 @@ fakeButtonClick:
                     {
                       nws->state &= ~3;
                       InvalidateRect(nw,NULL,FALSE);
+                      swell_atspi_window_changed(nw);
                     }
                   }
   
@@ -1370,6 +1374,8 @@ fakeButtonClick:
 
             s->state = 1 | (s->state&~3);
           }
+          if (sf == BS_AUTO3STATE || sf == BS_AUTOCHECKBOX || sf == BS_AUTORADIOBUTTON)
+            swell_atspi_window_changed(hwnd);
           SendMessage(hwnd->m_parent,WM_COMMAND,MAKEWPARAM(hwnd->m_id,BN_CLICKED),(LPARAM)hwnd);
         }
         if (msg == WM_KEYDOWN) InvalidateRect(hwnd,NULL,FALSE);
@@ -1567,6 +1573,7 @@ fakeButtonClick:
         INT_PTR op = s->state;
         s->state=(check > 2 || check<0 ? 1 : (check&3)) | (s->state&~3);
         if (s->state == op) break; 
+        swell_atspi_window_changed(hwnd);
       }
       else
       {
@@ -2825,6 +2832,7 @@ forceMouseMove:
                (hwnd->m_style & (ES_MULTILINE|ES_AUTOHSCROLL)) == ES_MULTILINE
             );
             InvalidateRect(hwnd,NULL,FALSE);
+            swell_atspi_window_changed(hwnd);
           }
           return 0;
         }
@@ -3008,6 +3016,7 @@ again:
       InvalidateRect(hwnd,NULL,FALSE);
       if (hwnd->m_id && hwnd->m_parent)
         SendMessage(hwnd->m_parent,WM_COMMAND,(EN_CHANGE<<16)|hwnd->m_id,(LPARAM)hwnd);
+      swell_atspi_window_changed(hwnd);
     break;
     case EM_REPLACESEL:
       if (lParam && es)
@@ -3082,10 +3091,12 @@ static LRESULT WINAPI progressWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
     case PBM_DELTAPOS:
       if (hwnd->m_private_data) *(int *)hwnd->m_private_data += (int) wParam; // todo: unsigned-ness conversion? unclear
       InvalidateRect(hwnd,NULL,FALSE);
+      swell_atspi_window_changed(hwnd);
     break;
     case PBM_SETPOS:
       if (hwnd->m_private_data) *(int *)hwnd->m_private_data = (int) wParam;
       InvalidateRect(hwnd,NULL,FALSE);
+      swell_atspi_window_changed(hwnd);
     break;
     case PBM_SETRANGE:
       if (hwnd->m_private_data) ((int *)hwnd->m_private_data)[1] = (int) lParam;
@@ -3149,6 +3160,7 @@ static LRESULT WINAPI trackbarWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
     case TBM_SETPOS:
       if (hwnd->m_private_data) *(int *)hwnd->m_private_data = (int) lParam;
       if (wParam) InvalidateRect(hwnd,NULL,FALSE);
+      swell_atspi_window_changed(hwnd);
     break;
     case TBM_GETPOS:
       if (hwnd->m_private_data) return *(int *)hwnd->m_private_data;
@@ -3552,6 +3564,7 @@ static LRESULT WINAPI comboWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
               s->selidx = -1;
               SetWindowText(hwnd,"");
               InvalidateRect(hwnd,NULL,FALSE);
+              swell_atspi_window_changed(hwnd);
             }
             return CB_ERR;
           }
@@ -3563,6 +3576,7 @@ static LRESULT WINAPI comboWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
               char *ptr=s->items.Get(wParam)->desc;
               SetWindowText(hwnd,ptr);
               InvalidateRect(hwnd,NULL,FALSE);
+              swell_atspi_window_changed(hwnd);
             }
           }
         return s->selidx;
@@ -3709,6 +3723,7 @@ popupMenu:
             char *ptr=s->items.Get(s->selidx)->desc;
             SetWindowText(hwnd,ptr);
             InvalidateRect(hwnd,NULL,FALSE);
+            swell_atspi_window_changed(hwnd);
             SendMessage(GetParent(hwnd),WM_COMMAND,(GetWindowLong(hwnd,GWL_ID)&0xffff) | (CBN_SELCHANGE<<16),(LPARAM)hwnd);
           }
           hwnd->Release();
@@ -3734,6 +3749,7 @@ popupMenu:
         SendMessage(GetParent(hwnd),WM_COMMAND,(CBN_EDITCHANGE<<16) | (hwnd->m_id&0xffff),(LPARAM)hwnd);
         s->editstate.autoScrollToOffset(hwnd,s->editstate.cursor_pos,false,false, SWELL_UI_SCALE(buttonwid+2));
         InvalidateRect(hwnd,NULL,FALSE);
+        swell_atspi_window_changed(hwnd);
         return 0;
       }
       if (wParam == VK_SPACE) { s_capmode_state=5; goto popupMenu; }
@@ -3842,6 +3858,7 @@ popupMenu:
     case WM_SETTEXT:
       s->editstate.cursor_pos = WDL_utf8_get_charlen(hwnd->m_title.Get());
       s->editstate.sel1 = s->editstate.sel2 = -1;
+      swell_atspi_window_changed(hwnd);
     case WM_CAPTURECHANGED:
       InvalidateRect(hwnd,NULL,FALSE);
     break;
@@ -3892,6 +3909,7 @@ popupMenu:
             s->selidx=nv;
             SetWindowText(hwnd,s->items.Get(nv)->desc);
             InvalidateRect(hwnd,NULL,FALSE);
+            swell_atspi_window_changed(hwnd);
             SendMessage(GetParent(hwnd),WM_COMMAND,(GetWindowLong(hwnd,GWL_ID)&0xffff) | (CBN_SELCHANGE<<16),(LPARAM)hwnd);
           }
         }
@@ -4495,6 +4513,8 @@ static LRESULT listViewWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             }
           }
           InvalidateRect(hwnd,NULL,FALSE);
+          if (oldsel != lvs->m_selitem)
+            swell_atspi_window_changed(hwnd);
         }
         else 
         {
@@ -4896,6 +4916,7 @@ forceMouseMove:
               SendMessage(GetParent(hwnd),WM_NOTIFY,hwnd->m_id,(LPARAM)&nm);
             }
             ListView_EnsureVisible(hwnd,lvs->m_selitem,FALSE);
+            swell_atspi_window_changed(hwnd);
           }
           if (flag&1) InvalidateRect(hwnd,NULL,FALSE);
 
@@ -5390,6 +5411,7 @@ forceMouseMove:
       {
         lvs->m_selitem = (int)wParam;
         InvalidateRect(hwnd,NULL,FALSE);
+        swell_atspi_window_changed(hwnd);
       }
     return LB_ERR;
     case LB_GETSEL:
@@ -7434,6 +7456,7 @@ int menuBarNavigate(int dir) // -1 if no menu bar active, 0 if did nothing, 1 if
     {
       menu->sel_vis = x;
       g_menubar_lastrect = r;
+      swell_atspi_menubar_selection_changed(g_menubar_active);
 
       DestroyPopupMenus();
       return 1;
@@ -7459,6 +7482,7 @@ static void runMenuBar(HWND hwnd, HMENU__ *menu, int x, const RECT *use_r, int f
   menu->sel_vis = x;
   g_menubar_active = hwnd;
   g_menubar_active_drag=true;
+  swell_atspi_menubar_selection_changed(hwnd);
   for (;;)
   {
     InvalidateRect(hwnd,&mbr,FALSE);
@@ -7499,6 +7523,7 @@ LRESULT DefWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
           {
             menu->sel_vis = x;
             g_menubar_lastrect = r;
+            swell_atspi_menubar_selection_changed(hwnd);
 
             DestroyPopupMenus(); // cause new menu to be popped up
           }

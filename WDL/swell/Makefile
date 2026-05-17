@@ -139,11 +139,12 @@ ifndef NOGDK
     endif
   endif
   CFLAGS += -DSWELL_LICE_GDI
+  CFLAGS += $(shell $(PKG_CONFIG) --cflags gio-2.0)
+  LINKEXTRA += $(shell $(PKG_CONFIG) --libs gio-2.0)
   OBJS += $(LICE_OBJS)
 
   ifndef NOATSPI
-    CFLAGS += -DSWELL_ATSPI $(shell $(PKG_CONFIG) --cflags gio-2.0)
-    LINKEXTRA += $(shell $(PKG_CONFIG) --libs gio-2.0)
+    CFLAGS += -DSWELL_ATSPI
   endif
 
   ifndef NOFREETYPE

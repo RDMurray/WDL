@@ -61,12 +61,32 @@ END
 // Dialog
 //
 
-IDD_DIALOG1 DIALOG DISCARDABLE  0, 0, 377, 261
+IDD_DIALOG1 DIALOG DISCARDABLE  0, 0, 430, 296
 STYLE DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
-CAPTION "SWELL MyApp"
+CAPTION "SWELL AT-SPI Harness"
 FONT 8, "MS Sans Serif"
 BEGIN
-    PUSHBUTTON      "Quit",IDCANCEL,4,244,50,14
+    LTEXT           "Single-line edit",IDC_STATIC,8,10,82,10
+    EDITTEXT        IDC_EDIT1,96,8,128,14,ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "Activate",IDC_BUTTON1,232,7,70,16
+    PUSHBUTTON      "Mutate state",IDC_BUTTON_STATE,310,7,76,16
+    CONTROL         "Checked option",IDC_CHECK1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,8,32,96,12
+    CONTROL         "Radio alpha",IDC_RADIO1,"Button",BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,112,32,76,12
+    CONTROL         "Radio beta",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON | WS_TABSTOP,192,32,72,12
+    LTEXT           "Multiline edit",IDC_STATIC,8,54,82,10
+    EDITTEXT        IDC_EDIT_MULTI,96,52,178,54,ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Combo box",IDC_STATIC,288,54,58,10
+    COMBOBOX        IDC_COMBO1,348,52,72,64,CBS_DROPDOWNLIST | WS_TABSTOP
+    LTEXT           "List box",IDC_STATIC,288,82,58,10
+    LISTBOX         IDC_LIST1,348,80,72,58,WS_TABSTOP
+    LTEXT           "Slider",IDC_STATIC,8,122,54,10
+    CONTROL         "",IDC_SLIDER1,"msctls_trackbar32",WS_TABSTOP,64,118,170,20
+    PUSHBUTTON      "Step progress",IDC_BUTTON_PROGRESS,242,118,82,16
+    LTEXT           "Progress",IDC_STATIC,8,150,54,10
+    CONTROL         "",IDC_PROGRESS1,"msctls_progress32",0,64,148,170,12
+    CONTROL         "",IDC_TAB1,"SysTabControl32",WS_TABSTOP,8,176,246,50
+    LTEXT           "Status: ready",IDC_STATIC_STATUS,8,236,322,16
+    PUSHBUTTON      "Quit",IDCANCEL,372,274,50,14
 END
 
 
@@ -81,9 +101,9 @@ BEGIN
     IDD_DIALOG1, DIALOG
     BEGIN
         LEFTMARGIN, 4
-        RIGHTMARGIN, 374
+        RIGHTMARGIN, 426
         TOPMARGIN, 3
-        BOTTOMMARGIN, 258
+        BOTTOMMARGIN, 292
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -117,7 +137,7 @@ BEGIN
             VALUE "FileDescription", "swell_myapp\0"
             VALUE "FileVersion", "0, 0, 0, 1\0"
             VALUE "InternalName", "swell_myapp\0"
-            VALUE "LegalCopyright", "Copyright © 2022 and onwards\0"
+            VALUE "LegalCopyright", "Copyright (C) 2022 and onwards\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "MyApp.exe\0"
             VALUE "PrivateBuild", "\0"

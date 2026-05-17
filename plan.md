@@ -6,6 +6,7 @@
 - Keep the old AccessKit work as historical reference on the `accesskit` branch.
 - Do not touch the sibling `../accesskit` checkout.
 - Remove the Rust AccessKit shim model entirely for this branch. The new provider should emit AT-SPI objects directly from live SWELL state on demand.
+- Current performance hypothesis: direct AT-SPI only beats the AccessKit path if Orca can use the modern cache shape and if SWELL avoids excessive per-object method traffic, focus churn, and stale object-path retries.
 
 ## Key Changes
 
@@ -24,11 +25,15 @@
 - Collections: expose listbox/listview/tree/tab/report-grid children lazily, including visible ranges for large or owner-data collections.
 - Eventing: emit focused/state/name/value/text/selection/children events from SWELL mutation hooks and forward GDK key events to AT-SPI key watchers where needed.
 - Cache support: add `/org/a11y/atspi/cache` only after basic Orca navigation works, and keep it a transient reply generator rather than the source of truth.
+- Cache support now needs the modern `a((so)(so)(so)iiassusau)` item shape: object, application, parent, index in parent, child count, interface names, name, role, description, and state set. Use sparse `AddAccessible`/`RemoveAccessible` signals for real lifecycle changes only; do not emit bulk startup cache storms.
+- Debug-log workflow: run the sample as `SWELL_ATSPI_DEBUG=1 SWELL_ATSPI_LOG=/tmp/swell-atspi-myapp.log ./myapp`. The log should include timestamps, sequence numbers, thread id, method/property calls, cache `GetItems` counts/timing, emitted object/focus/cache events, focus/menu transitions, and keyboard forwarding.
+- Sample harness scope: the default sample app should expose labels, buttons, checkbox, radio buttons, single-line and multiline edits, combo box, listbox, slider, progress bar, tab control, and a menu bar with normal, checked, radio, disabled, and submenu items.
 
 ## Test Plan
 
 - Build SWELL with `make -C WDL/swell -j2`.
-- Build the sample app with `make -C WDL/swell/sample_project`.
+- Clean and build the sample app with `make -C WDL/swell/sample_project clean` and `make -C WDL/swell/sample_project -j2`.
+- Build the sample app without AT-SPI with `make -C WDL/swell/sample_project -j2 NOATSPI=1`.
 - Run `git diff --check`.
 - Confirm no new references to AccessKit, `SWELL_ACCESSKIT`, `NOACCESSKIT`, or `rust/accesskit_shim` remain in the implementation.
 - Use AT-SPI inspection tools to confirm the sample app appears on the bus and that lazy object paths return sane roles, names, parents, children, states, extents, and actions.

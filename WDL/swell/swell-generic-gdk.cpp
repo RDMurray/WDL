@@ -1407,10 +1407,20 @@ static void OnKeyEvent(GdkEventKey *k)
       if (key_name) event_string = key_name;
     }
 
+    uint32_t atspi_modifiers = 0;
+    if (k->state & GDK_SHIFT_MASK) atspi_modifiers |= 1u << 0;
+    if (k->state & GDK_LOCK_MASK) atspi_modifiers |= 1u << 1;
+    if (k->state & GDK_CONTROL_MASK) atspi_modifiers |= 1u << 2;
+    if (k->state & GDK_MOD1_MASK) atspi_modifiers |= 1u << 3;
+    if (k->state & GDK_META_MASK) atspi_modifiers |= 1u << 4;
+    if (k->state & GDK_SUPER_MASK) atspi_modifiers |= 1u << 6;
+    if (k->state & GDK_HYPER_MASK) atspi_modifiers |= 1u << 7;
+    if (k->state & GDK_MOD2_MASK) atspi_modifiers |= 1u << 14;
+
     swell_atspi_keyboard_event(k->type == GDK_KEY_PRESS ? 0 : 1,
         (uint32_t)k->keyval,
         (uint32_t)k->hardware_keycode,
-        (uint32_t)k->state,
+        atspi_modifiers,
         (int32_t)k->time,
         event_string,
         is_text);

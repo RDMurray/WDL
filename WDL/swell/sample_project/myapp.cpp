@@ -36,6 +36,101 @@ bool g_quit;
 HINSTANCE g_hInstance;
 HWND g_hwnd;
 
+static HMENU g_menu;
+static HMENU g_options_menu;
+static int g_progress;
+
+static void setStatus(HWND hwndDlg, const char *text)
+{
+  SetDlgItemText(hwndDlg,IDC_STATIC_STATUS,text ? text : "Status");
+}
+
+static void initMenu(HWND hwndDlg)
+{
+  HMENU submenu = CreatePopupMenu();
+  AddMenuItem(submenu,0,"Submenu action",ID_SAMPLE_SUBITEM);
+
+  g_options_menu = CreatePopupMenu();
+  AddMenuItem(g_options_menu,0,"Normal action",ID_SAMPLE_ACTIVATE);
+  AddMenuItem(g_options_menu,1,"Checked item",ID_SAMPLE_CHECKED);
+  AddMenuItem(g_options_menu,2,"Radio A",ID_SAMPLE_RADIO_A);
+  AddMenuItem(g_options_menu,3,"Radio B",ID_SAMPLE_RADIO_B);
+  AddMenuItem(g_options_menu,4,"Disabled item",ID_SAMPLE_DISABLED);
+  InsertMenu(g_options_menu,5,MF_BYPOSITION|MF_SEPARATOR,0,NULL);
+  InsertMenu(g_options_menu,6,MF_BYPOSITION|MF_POPUP,(UINT_PTR)submenu,"Submenu");
+  CheckMenuItem(g_options_menu,ID_SAMPLE_CHECKED,MF_BYCOMMAND|MF_CHECKED);
+  CheckMenuItem(g_options_menu,ID_SAMPLE_RADIO_A,MF_BYCOMMAND|MF_CHECKED);
+  MENUITEMINFO mi = { sizeof(mi), MIIM_TYPE };
+  mi.fType = MFT_RADIOCHECK;
+  SetMenuItemInfo(g_options_menu,ID_SAMPLE_RADIO_A,FALSE,&mi);
+  SetMenuItemInfo(g_options_menu,ID_SAMPLE_RADIO_B,FALSE,&mi);
+  EnableMenuItem(g_options_menu,ID_SAMPLE_DISABLED,MF_BYCOMMAND|MF_GRAYED);
+
+  g_menu = CreatePopupMenu();
+  InsertMenu(g_menu,0,MF_BYPOSITION|MF_POPUP,(UINT_PTR)g_options_menu,"Harness");
+  AddMenuItem(g_menu,1,"Quit",ID_QUIT);
+  SetMenu(hwndDlg,g_menu);
+}
+
+static bool menuItemChecked(HMENU menu, int command_id)
+{
+  MENUITEMINFO mi = { sizeof(mi), MIIM_STATE };
+  return GetMenuItemInfo(menu,command_id,FALSE,&mi) && (mi.fState & MF_CHECKED);
+}
+
+static void initControls(HWND hwndDlg)
+{
+  SetDlgItemText(hwndDlg,IDC_EDIT1,"Sample text");
+  SetDlgItemText(hwndDlg,IDC_EDIT_MULTI,"First line\nSecond editable line");
+  SendDlgItemMessage(hwndDlg,IDC_CHECK1,BM_SETCHECK,BST_CHECKED,0);
+  SendDlgItemMessage(hwndDlg,IDC_RADIO1,BM_SETCHECK,BST_CHECKED,0);
+  SendDlgItemMessage(hwndDlg,IDC_RADIO2,BM_SETCHECK,BST_UNCHECKED,0);
+
+  SWELL_CB_AddString(hwndDlg,IDC_COMBO1,"Alpha");
+  SWELL_CB_AddString(hwndDlg,IDC_COMBO1,"Beta");
+  SWELL_CB_AddString(hwndDlg,IDC_COMBO1,"Gamma");
+  SWELL_CB_SetCurSel(hwndDlg,IDC_COMBO1,0);
+
+  SendDlgItemMessage(hwndDlg,IDC_LIST1,LB_ADDSTRING,0,(LPARAM)"List row one");
+  SendDlgItemMessage(hwndDlg,IDC_LIST1,LB_ADDSTRING,0,(LPARAM)"List row two");
+  SendDlgItemMessage(hwndDlg,IDC_LIST1,LB_ADDSTRING,0,(LPARAM)"List row three");
+  SendDlgItemMessage(hwndDlg,IDC_LIST1,LB_SETCURSEL,0,0);
+
+  SWELL_TB_SetRange(hwndDlg,IDC_SLIDER1,0,100);
+  SWELL_TB_SetPos(hwndDlg,IDC_SLIDER1,40);
+  SendDlgItemMessage(hwndDlg,IDC_PROGRESS1,PBM_SETRANGE,0,MAKELONG(0,100));
+  SendDlgItemMessage(hwndDlg,IDC_PROGRESS1,PBM_SETPOS,g_progress,0);
+
+  HWND tab = GetDlgItem(hwndDlg,IDC_TAB1);
+  if (tab)
+  {
+    TCITEM item = { TCIF_TEXT, 0, 0, (char *)"Tab one", 0, 0, 0 };
+    TabCtrl_InsertItem(tab,0,&item);
+    item.pszText = (char *)"Tab two";
+    TabCtrl_InsertItem(tab,1,&item);
+    TabCtrl_SetCurSel(tab,0);
+  }
+}
+
+static void updateProgress(HWND hwndDlg)
+{
+  int slider = SWELL_TB_GetPos(hwndDlg,IDC_SLIDER1);
+  if (slider < 0) slider = 0;
+  if (slider > 100) slider = 100;
+  g_progress = slider;
+  SendDlgItemMessage(hwndDlg,IDC_PROGRESS1,PBM_SETPOS,g_progress,0);
+  char buf[128];
+  snprintf(buf,sizeof(buf),"Status: progress set to %d",g_progress);
+  setStatus(hwndDlg,buf);
+}
+
+static void handleRadio(HWND hwndDlg, int which)
+{
+  SendDlgItemMessage(hwndDlg,IDC_RADIO1,BM_SETCHECK,which == IDC_RADIO1 ? BST_CHECKED : BST_UNCHECKED,0);
+  SendDlgItemMessage(hwndDlg,IDC_RADIO2,BM_SETCHECK,which == IDC_RADIO2 ? BST_CHECKED : BST_UNCHECKED,0);
+  setStatus(hwndDlg,which == IDC_RADIO1 ? "Status: radio alpha selected" : "Status: radio beta selected");
+}
+
 WDL_DLGRET mainProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
   static WDL_WndSizer resize;
@@ -52,6 +147,8 @@ WDL_DLGRET mainProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
       resize.init(hwndDlg);
       resize.init_item(IDCANCEL,0,1,0,1);
+      initMenu(hwndDlg);
+      initControls(hwndDlg);
     return 1;
     case WM_CLOSE:
       DestroyWindow(hwndDlg);
@@ -73,11 +170,56 @@ WDL_DLGRET mainProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND:
       switch (LOWORD(wParam))
       {
+        case IDC_BUTTON1:
+        case ID_SAMPLE_ACTIVATE:
+          setStatus(hwndDlg,"Status: action activated");
+        break;
+        case IDC_BUTTON_STATE:
+          SendDlgItemMessage(hwndDlg,IDC_CHECK1,BM_SETCHECK,
+              SendDlgItemMessage(hwndDlg,IDC_CHECK1,BM_GETCHECK,0,0) == BST_CHECKED ? BST_UNCHECKED : BST_CHECKED,0);
+          SetDlgItemText(hwndDlg,IDC_EDIT1,"State changed");
+          setStatus(hwndDlg,"Status: checkbox and edit text changed");
+        break;
+        case IDC_BUTTON_PROGRESS:
+          g_progress = (g_progress + 10) % 110;
+          SendDlgItemMessage(hwndDlg,IDC_PROGRESS1,PBM_SETPOS,g_progress,0);
+          setStatus(hwndDlg,"Status: progress stepped");
+        break;
+        case IDC_CHECK1:
+          setStatus(hwndDlg,"Status: checkbox toggled");
+        break;
+        case IDC_RADIO1:
+        case IDC_RADIO2:
+          handleRadio(hwndDlg,LOWORD(wParam));
+        break;
+        case IDC_COMBO1:
+          if (HIWORD(wParam) == CBN_SELCHANGE) setStatus(hwndDlg,"Status: combo selection changed");
+        break;
+        case IDC_LIST1:
+          if (HIWORD(wParam) == LBN_SELCHANGE) setStatus(hwndDlg,"Status: list selection changed");
+        break;
+        case ID_SAMPLE_CHECKED:
+          CheckMenuItem(g_options_menu,ID_SAMPLE_CHECKED,MF_BYCOMMAND|
+              (menuItemChecked(g_options_menu,ID_SAMPLE_CHECKED) ? MF_UNCHECKED : MF_CHECKED));
+          setStatus(hwndDlg,"Status: checked menu item activated");
+        break;
+        case ID_SAMPLE_RADIO_A:
+        case ID_SAMPLE_RADIO_B:
+          CheckMenuItem(g_options_menu,ID_SAMPLE_RADIO_A,MF_BYCOMMAND|(LOWORD(wParam) == ID_SAMPLE_RADIO_A ? MF_CHECKED : MF_UNCHECKED));
+          CheckMenuItem(g_options_menu,ID_SAMPLE_RADIO_B,MF_BYCOMMAND|(LOWORD(wParam) == ID_SAMPLE_RADIO_B ? MF_CHECKED : MF_UNCHECKED));
+          setStatus(hwndDlg,LOWORD(wParam) == ID_SAMPLE_RADIO_A ? "Status: menu radio A" : "Status: menu radio B");
+        break;
+        case ID_SAMPLE_SUBITEM:
+          setStatus(hwndDlg,"Status: submenu item activated");
+        break;
         case ID_QUIT:
         case IDCANCEL:
           DestroyWindow(hwndDlg);
         break;
       }
+    break;
+    case WM_HSCROLL:
+      updateProgress(hwndDlg);
     break;
   }
   return 0;

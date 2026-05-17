@@ -928,9 +928,10 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             }
             MENUITEMINFO *inf = menu->items.Get(--l);
             if (!inf) break; 
-            if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR) 
+            if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR)
             {
               menu->sel_vis=l;
+              swell_atspi_menu_selection_changed(hwnd);
               break;
             }
           }
@@ -957,9 +958,10 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             }
             MENUITEMINFO *inf = menu->items.Get(++l);
             if (!inf) break; 
-            if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR) 
+            if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR)
             {
               menu->sel_vis=l;
+              swell_atspi_menu_selection_changed(hwnd);
               break;
             }
           }
@@ -974,9 +976,10 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         {
           MENUITEMINFO *inf = menu->items.Get(--l);
           if (!inf) break; 
-          if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR) 
+          if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR)
           {
             menu->sel_vis=l;
+            swell_atspi_menu_selection_changed(hwnd);
             break;
           }
         }
@@ -992,9 +995,10 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         {
           MENUITEMINFO *inf = menu->items.Get(l++);
           if (!inf) break; 
-          if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR) 
+          if (!(inf->fState & MF_GRAYED) && inf->fType != MFT_SEPARATOR)
           {
             menu->sel_vis=l-1;
+            swell_atspi_menu_selection_changed(hwnd);
             break;
           }
         }
@@ -1045,6 +1049,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
               if (!matchcnt++)
               {
                 menu->sel_vis = offs;
+                swell_atspi_menu_selection_changed(hwnd);
                 if (menu->sel_vis < hwnd->m_extra[0])
                   hwnd->m_extra[0] = menu->sel_vis;
                 InvalidateRect(hwnd,NULL,FALSE);
@@ -1059,6 +1064,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
     return 1;
     case WM_DESTROY:
       {
+        swell_atspi_menu_destroyed(hwnd);
         int a = m_trackingMenus.Find(hwnd);
         m_trackingMenus.Delete(a);
         if (m_trackingMenus.Get(a)) DestroyWindow(m_trackingMenus.Get(a));
@@ -1116,6 +1122,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
               {
                 wParam = 1; // activate if not already visible
                 menu->sel_vis = which;
+                swell_atspi_menu_selection_changed(hwnd);
               }
             }
             break; 
@@ -1132,6 +1139,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
               DestroyWindow(next);
           }
           menu->sel_vis = which;
+          swell_atspi_menu_selection_changed(hwnd);
           return 0;
         }
         if (wParam == 3)
@@ -1140,6 +1148,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
           {
             SetTimer(hwnd,5,300,NULL);
             menu->sel_vis = which;
+            swell_atspi_menu_selection_changed(hwnd);
           }
           return 0;
         }
@@ -1178,6 +1187,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             ClientToScreen(hwnd,&m_trackingPt2);
 
             submenuWndProc(hh, WM_CREATE,0,(LPARAM)inf->hSubMenu);
+            swell_atspi_menu_created(hh,(HWND)GetProp(hh,"SWELL_MenuOwner"));
             InvalidateRect(hwnd,NULL,FALSE);
           }
           else if (inf->wID) m_trackingRet = inf->wID;
@@ -1222,6 +1232,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
                   if (s && s->hSubMenu == m)
                   {
                     m2->sel_vis = x;
+                    swell_atspi_menu_selection_changed(h);
                     InvalidateRect(h,NULL,FALSE);
                     break;
                   }
@@ -1234,6 +1245,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
           SendMessage(hwnd,WM_USER+100,mode,GET_Y_LPARAM(lParam));
         }
         else menu->sel_vis = -1;
+        if (oldsel != menu->sel_vis) swell_atspi_menu_selection_changed(hwnd);
         if (oldsel != menu->sel_vis) InvalidateRect(hwnd,NULL,FALSE);
       }
     return 0;
@@ -1312,9 +1324,9 @@ int TrackPopupMenu(HMENU hMenu, int flags, int xpos, int ypos, int resvd, HWND h
 
   HWND hh=new HWND__(NULL,0,NULL,"menu",false,submenuWndProc,NULL, hwnd);
 
-  submenuWndProc(hh,WM_CREATE,0,(LPARAM)hMenu);
-
   SetProp(hh,"SWELL_MenuOwner",(HANDLE)hwnd);
+  submenuWndProc(hh,WM_CREATE,0,(LPARAM)hMenu);
+  swell_atspi_menu_created(hh,hwnd);
 
   while (m_trackingRet<0 && m_trackingMenus.GetSize())
   {
